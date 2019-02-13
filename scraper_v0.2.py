@@ -4,6 +4,8 @@ import pprint
 import json
 import time
 import datetime as dt
+import auth
+from twilio.rest import Client
 
 # Calculates combined odds
 def calc_arb(game):
@@ -92,6 +94,7 @@ def scrap(url):
     # Get a list of urls and league names
     url_list, name_list = create_url_list(script_json)
     # Cycle thru all lists
+    all_results = []
     for i in range(len(url_list)):
         print('Getting {} data'.format(name_list[i]))
         # Get league webpage
@@ -100,16 +103,55 @@ def scrap(url):
         script_json = convert_to_json(sauce)
         # Get a list of games with arbitrage opportunities
         results_list = get_games_data(script_json)
+        all_results.append(results_list)
         if len(results_list) > 0:
             save_data(results_list, 'all')
+    return all_results
+
+def pick_data_to_send(league_results):
+    if len(league_results) > 0:
+        message = ''
+        for i in range(len(league_results)):
+            for j in range(len(league_results[i])):
+                timestamp = league_results[i][j][0]
+                team_a = league_results[i][j][1][0]['name']
+                odds_a = str(league_results[i][j][1][0]['odds'])
+                where_a = league_results[i][j][1][0]['where']
+                team_b = league_results[i][j][1][1]['name']
+                odds_b = str(league_results[i][j][1][1]['odds'])
+                where_b = league_results[i][j][1][1]['where']
+                odds = str(round(1 / league_results[i][j][2]['total_odds'], 4))
+                message += timestamp + ' ' + team_a + ' ' + where_a + ' ' + odds_a + ' '
+                message += team_b + ' ' + where_b + ' ' + odds_b + ' ' + odds
+    return message
+
+def whats_message(message, account_sid, auth_token, client):
+    whats = client.messages.create(
+            body=message,
+            from_='whatsapp:+14155238886',
+            to='whatsapp:+61404320180')
+    print('Message sent: ' + whats.sid)
 
 url = ['https://www.oddschecker.com/au/tennis',\
 'https://www.oddschecker.com/au/basketball', 'https://www.oddschecker.com/au/boxing-mma/ufc-mma']
 minutes = 29
-for i in range(48):
-    print('Iteration %d of 48' % (i+1))
+
+account_sid = auth.sid()
+auth_token = auth.token()
+client = Client(account_sid, auth_token)
+
+count = 0
+while True:
+    count += 1
+    print(dt.datetime.now())
+    print('Iteration %d' % (count))
     for j in range(len(url)):
-        scrap(url[j])
+        league_results = scrap(url[j])
+        message = pick_data_to_send(league_results)
+        if len(message) > 0:
+            whats_message(message, account_sid, auth_token, client)
         time.sleep(1)
     print('Sleep for %d minutes' % minutes)
-    time.sleep(minutes*60)
+    for i in range(5):
+        time.sleep(minutes*12)
+        print('%.2f minutes' % (i * minutes / 5))
