@@ -1,10 +1,9 @@
 import bs4 as bs
 import requests
-import pprint
 import json
 import time
 import datetime as dt
-import auth
+import authentication as auth
 from twilio.rest import Client
 
 # Calculates combined odds
@@ -104,53 +103,102 @@ def scrap(url):
         # Get a list of games with arbitrage opportunities
         results_list = get_games_data(script_json)
         all_results.append(results_list)
-        if len(results_list) > 0:
-            save_data(results_list, 'all')
     return all_results
+
+def convert_bookmaker(code):
+    if code == 'PO':
+        return 'POINTSBET'
+    elif code == 'B3':
+        return 'BET365'
+    elif code == 'CR':
+        return 'BETEASY'
+    elif code == 'SP':
+        return 'SPORTSBET'
+    elif code == 'TF':
+        return 'TABSPORTS'
+    elif code == 'LA':
+        return 'LADBROKES'
+    elif code == 'UA':
+        return 'UNIBET'
+    elif code == 'PB':
+        return 'PALMERBET'
+    elif code == 'TP':
+        return 'TOPBETTA'
+    elif code == 'CS':
+        return 'CLASSICBET'
+    elif code == 'TS':
+        return 'TOPSPORT'
+    elif code == 'ST':
+        return 'BETSTAR'
+    elif code == 'BM':
+        return 'BOOKMAKER'
+    elif code == 'BF':
+        return 'BETFAIR'
+    else:
+        return code
 
 def pick_data_to_send(league_results):
     if len(league_results) > 0:
         message = ''
         for i in range(len(league_results)):
             for j in range(len(league_results[i])):
-                timestamp = league_results[i][j][0]
                 team_a = league_results[i][j][1][0]['name']
-                odds_a = str(league_results[i][j][1][0]['odds'])
-                where_a = league_results[i][j][1][0]['where']
+                odds_a = league_results[i][j][1][0]['odds']
+                where_a = convert_bookmaker(league_results[i][j][1][0]['where'])
                 team_b = league_results[i][j][1][1]['name']
-                odds_b = str(league_results[i][j][1][1]['odds'])
-                where_b = league_results[i][j][1][1]['where']
+                odds_b = league_results[i][j][1][1]['odds']
+                where_b = convert_bookmaker(league_results[i][j][1][1]['where'])
                 odds = str(round(1 / league_results[i][j][2]['total_odds'], 4))
-                message += timestamp + ' ' + team_a + ' ' + where_a + ' ' + odds_a + ' '
-                message += team_b + ' ' + where_b + ' ' + odds_b + ' ' + odds
+                bet_a = str(round(100 * odds_b / (odds_a + odds_b), 2))
+                bet_b = str(round(100 * odds_a / (odds_a + odds_b), 2))
+                message += team_a + ' ' + where_a + ' ' + str(odds_a) + ' ' + bet_a + '-'
+                message += team_b + ' ' + where_b + ' ' + str(odds_b) + ' ' + bet_b + ' '
+                message += odds + '*'
     return message
 
 def whats_message(message, account_sid, auth_token, client):
-    whats = client.messages.create(
-            body=message,
-            from_='whatsapp:+14155238886',
-            to='whatsapp:+61404320180')
-    print('Message sent: ' + whats.sid)
+    message = dt.datetime.now().strftime('%m-%d %H:%M') + ' ' + message
+    message_length = len(message)
+    print(message_length)
+    if message_length > 140:
+        number_of_messages = int(message_length / 140) + 1
+        for i in range(number_of_messages):
+            message_limited = message[140*i:140*i+140]
+            whats = client.messages.create(
+                    body=message_limited,
+                    from_='whatsapp:+14155238886',
+                    to='whatsapp:+61404320180')
+            print('Message sent: ' + whats.sid)
+    else:
+        whats = client.messages.create(
+                body=message,
+                from_='whatsapp:+14155238886',
+                to='whatsapp:+61404320180')
+        print('Message sent: ' + whats.sid)
 
 url = ['https://www.oddschecker.com/au/tennis',\
 'https://www.oddschecker.com/au/basketball', 'https://www.oddschecker.com/au/boxing-mma/ufc-mma']
-minutes = 29
+minutes = 30
 
 account_sid = auth.sid()
 auth_token = auth.token()
 client = Client(account_sid, auth_token)
-
+default_message = 'No opportunities found'
 count = 0
 while True:
     count += 1
     print(dt.datetime.now())
     print('Iteration %d' % (count))
+    message = ''
     for j in range(len(url)):
         league_results = scrap(url[j])
-        message = pick_data_to_send(league_results)
-        if len(message) > 0:
-            whats_message(message, account_sid, auth_token, client)
-        time.sleep(1)
+        message += pick_data_to_send(league_results)
+    if len(message) > 0:
+        print(message)
+        whats_message(message, account_sid, auth_token, client)
+    else:
+        print(default_message)
+        whats_message(default_message, account_sid, auth_token, client)
     print('Sleep for %d minutes' % minutes)
     for i in range(5):
         time.sleep(minutes*12)
